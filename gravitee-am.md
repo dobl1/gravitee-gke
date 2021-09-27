@@ -39,13 +39,19 @@ export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace $NAMESPACE $NAME_M
 ```
 
 ```bash
-export GRAVITEE_HOST='am.sandbox-gravitee.dobl.fr'
+export GRAVITEE_HOST='am.sandbox-gravitee.example.com' # Replace by your host
 ```
 
+> The following assumes you already deployed the Ngnix ingress and Cert Manager (part of APIm install)
 > The external IP that is allocated to the ingress-controller is the IP to which all incoming traffic should be routed. To enable this, add it to a DNS zone you control. Details : https://cert-manager.io/docs/tutorials/acme/ingress/
 
 ```bash
-helm install $NAME_GRAVITEE_AM \
+# edit file and put your email, save and exit by doing "esc + :x)
+kubectl create --edit -f https://cert-manager.io/docs/tutorials/acme/example/production-issuer.yaml -n $NAMESPACE
+```
+
+```bash
+helm upgrade $NAME_GRAVITEE_AM \
     --namespace=$NAMESPACE \
     --set mongo.uri="mongodb://$MONGODB_USER:$MONGODB_ROOT_PASSWORD@$NAME_MONGO_AM.$NAMESPACE.svc.cluster.local:27017/admin?retryWrites=true&w=majority&connectTimeoutMS=30000&tls=false&ssl=false" \
     --set api.replicaCount=1 \
@@ -54,24 +60,46 @@ helm install $NAME_GRAVITEE_AM \
     --set api.ingress.hosts={$GRAVITEE_HOST} \
     --set api.ingress.tls[0].hosts={$GRAVITEE_HOST} \
     --set api.ingress.tls[0].secretName=$GRAVITEE_HOST \
-    --set gateway.ingress.hosts={$GRAVITEE_HOST} \
-    --set gateway.ingress.tls[0].hosts={$GRAVITEE_HOST} \
-    --set gateway.ingress.tls[0].secretName=$GRAVITEE_HOST \
-    --set gateway.ingress.annotations."kubernetes.io/app-root"="/" \
-    --set gateway.ingress.annotations."kubernetes.io/rewrite-target"="/" \
+    --set gateway.ingress.hosts={auth.$GRAVITEE_HOST} \
+    --set gateway.ingress.tls[0].hosts={auth.$GRAVITEE_HOST} \
+    --set gateway.ingress.tls[0].secretName=auth.$GRAVITEE_HOST \
+    --set gateway.ingress.annotations."kubernetes\.io\/app\-root"="/" \
+    --set gateway.ingress.annotations."kubernetes\.io\/rewrite\-target"="/" \
     --set gateway.ingress.path="/" \
     --set ui.ingress.hosts={$GRAVITEE_HOST} \
     --set ui.ingress.tls[0].hosts={$GRAVITEE_HOST} \
     --set ui.ingress.tls[0].secretName=$GRAVITEE_HOST \
-    --set ui.ingress.annotations."kubernetes.io/app-root"="/console" \
-    --set ui.ingress.annotations."kubernetes.io/rewrite-target"="/console" \
-    --set ui.ingress.path="/console" \
+    --set ui.ingress.annotations."kubernetes\.io\/app\-root"="/" \
+    --set ui.ingress.annotations."kubernetes\.io\/rewrite\-target"="/" \
+    --set ui.ingress.path="/" \
     $REPO_NAME_GRAVITEE/am
+
+    # --set ui.ingress.annotations."nginx\.ingress\.kubernetes\.io\/app\-root"="/console" \
+    # --set ui.ingress.annotations."nginx\.ingress\.kubernetes\.io\/rewrite\-target"="/console" \
+
 ```
 
 Update ingress to trigger tls certs generation
 ```bash
 kubectl -n $NAMESPACE annotate ingress cert-manager.io/issuer="letsencrypt-prod" --all
+```
+
+## Backup mongo database (GCP Cloud Shell based)
+```bash
+export NAMESPACE='sandbox-graviteeio-am' && \
+export NAME_MONGO_AM='graviteeio-am3x-mongodb'
+export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace $NAMESPACE $NAME_MONGO_AM -o jsonpath="{.data.mongodb-root-password}" | base64 --decode) && \
+kubectl port-forward --namespace $NAMESPACE svc/$NAME_MONGO_AM 27017:27017 &
+
+mkdir backup-$NAMESPACE-$NAME_MONGO_AM && \
+chmod o+w backup-$NAMESPACE-$NAME_MONGO_AM && \
+cd backup-$NAMESPACE-$NAME_MONGO_AM
+
+docker run --rm --name mongodb -v $(pwd):/app --net="host" bitnami/mongodb:latest mongodump -u root -p $MONGODB_ROOT_PASSWORD -o /app
+
+cd ..  && \
+zip -r backup-$NAMESPACE-$NAME_MONGO_AM.zip backup-$NAMESPACE-$NAME_MONGO_AM && \
+cloudshell download backup-$NAMESPACE-$NAME_MONGO_AM.zip
 ```
 
 ## Uninstall Gravitee AM

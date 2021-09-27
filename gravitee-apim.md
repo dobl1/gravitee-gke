@@ -63,7 +63,7 @@ export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace $NAMESPACE $NAME_M
 ```
 
 ```bash
-export GRAVITEE_HOST='apim.sandbox-gravitee.dobl.fr'
+export GRAVITEE_HOST='apim.sandbox-gravitee.example.com' # Replace by your host
 ```
 
 > The external IP that is allocated to the ingress-controller is the IP to which all incoming traffic should be routed. To enable this, add it to a DNS zone you control. Details : https://cert-manager.io/docs/tutorials/acme/ingress/
@@ -107,6 +107,24 @@ kubectl -n $NAMESPACE annotate ingress cert-manager.io/issuer="letsencrypt-prod"
 
 ```bash
 kubectl get pods --namespace=$NAMESPACE -l app.kubernetes.io/instance=$NAME_GRAVITEE_APIM -w
+```
+
+## Backup mongo database (GCP Cloud Shell based)
+```bash
+export NAMESPACE='sandbox-graviteeio' && \
+export NAME_MONGO_APIM='graviteeio-apim3x-mongodb' && \
+export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace $NAMESPACE $NAME_MONGO_APIM -o jsonpath="{.data.mongodb-root-password}" | base64 --decode) && \
+kubectl port-forward --namespace $NAMESPACE svc/$NAME_MONGO_APIM 27017:27017 &
+
+mkdir backup-$NAMESPACE-$NAME_MONGO_APIM && \
+chmod o+w backup-$NAMESPACE-$NAME_MONGO_APIM && \
+cd backup-$NAMESPACE-$NAME_MONGO_APIM
+
+docker run --rm --name mongodb -v $(pwd):/app --net="host" bitnami/mongodb:latest mongodump -u root -p $MONGODB_ROOT_PASSWORD -o /app
+
+cd ..  && \
+zip -r backup-$NAMESPACE-$NAME_MONGO_APIM.zip backup-$NAMESPACE-$NAME_MONGO_APIM && \
+cloudshell downloadbackup-$NAMESPACE-$NAME_MONGO_APIM.zip && \
 ```
 
 ## Uninstall Gravitee APIM
